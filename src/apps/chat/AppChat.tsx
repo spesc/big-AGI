@@ -125,7 +125,6 @@ export function AppChat() {
     prependNewConversation,
     branchConversation,
     deleteConversations,
-    setMessages,
   } = useConversation(focusedPaneConversationId);
 
   const { mayWork: capabilityHasT2I } = useCapabilityTextToImage();
@@ -228,6 +227,8 @@ export function AppChat() {
             return;
 
           case 'mode-beam':
+            if (chatCommand.isError)
+              return cHandler.messagesReplace(history);
             // remove '/beam ', as we want to be a user chat message
             Object.assign(lastMessage, { text: chatCommand.params || '' });
             cHandler.messagesReplace(history);
@@ -404,10 +405,10 @@ export function AppChat() {
 
   const handleConfirmedClearConversation = React.useCallback(() => {
     if (clearConversationId) {
-      setMessages(clearConversationId, []);
+      ConversationsManager.getHandler(clearConversationId).messagesReplace([]);
       setClearConversationId(null);
     }
-  }, [clearConversationId, setMessages]);
+  }, [clearConversationId]);
 
   const handleConversationClear = React.useCallback((conversationId: DConversationId) => setClearConversationId(conversationId), []);
 
@@ -451,7 +452,7 @@ export function AppChat() {
     ['o', true, true, false, handleOpenChatLlmOptions],
     ['+', true, true, false, useUIPreferencesStore.getState().increaseContentScaling],
     ['-', true, true, false, useUIPreferencesStore.getState().decreaseContentScaling],
-  ], [focusedPaneConversationId, handleConversationBranch, handleConversationClear, handleConversationNewInFocusedPane, handleDeleteConversations, handleMessageRegenerateLastInFocusedPane, handleNavigateHistoryInFocusedPane, handleOpenChatLlmOptions, isFocusedChatEmpty]);
+  ], [focusedPaneConversationId, handleConversationBranch, handleConversationClear, handleConversationNewInFocusedPane, handleDeleteConversations, handleMessageBeamLastInFocusedPane, handleMessageRegenerateLastInFocusedPane, handleNavigateHistoryInFocusedPane, handleOpenChatLlmOptions, isFocusedChatEmpty]);
   useGlobalShortcuts(shortcuts);
 
 
@@ -545,10 +546,11 @@ export function AppChat() {
                 borderRadius: '0.375rem',
                 border: `2px solid ${_paneIsFocused
                   ? ((willMulticast || !isMultiConversationId) ? theme.palette.primary.solidBg : theme.palette.primary.solidBg)
-                  : ((willMulticast || !isMultiConversationId) ? theme.palette.warning.softActiveBg : theme.palette.background.level1)}`,
-                filter: (!willMulticast && !_paneIsFocused)
-                  ? (!isMultiConversationId ? 'grayscale(66.67%)' /* clone of the same */ : 'grayscale(66.67%)')
-                  : undefined,
+                  : ((willMulticast || !isMultiConversationId) ? theme.palette.primary.softActiveBg : theme.palette.background.level1)}`,
+                // DISABLED on 2024-03-13, it gets in the way quite a lot
+                // filter: (!willMulticast && !_paneIsFocused)
+                //   ? (!isMultiConversationId ? 'grayscale(66.67%)' /* clone of the same */ : 'grayscale(66.67%)')
+                //   : undefined,
               } : {
                 // NOTE: this is a workaround for the 'stuck-after-collapse-close' issue. We will collapse the 'other' pane, which
                 // will get it removed (onCollapse), and somehow this pane will be stuck with a pointerEvents: 'none' style, which de-facto

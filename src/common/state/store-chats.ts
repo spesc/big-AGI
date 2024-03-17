@@ -101,6 +101,14 @@ export function messageToggleUserFlag(message: DMessage, flag: DMessageUserFlag)
     return [...(message.userFlags || []), flag];
 }
 
+const dMessageUserFlagToEmojiMap: Record<DMessageUserFlag, string> = {
+  starred: '⭐️',
+};
+
+export function messageUserFlagToEmoji(flag: DMessageUserFlag): string {
+  return dMessageUserFlagToEmojiMap[flag] || '❓';
+}
+
 
 /// Conversations Store
 
@@ -503,6 +511,5 @@ export const useConversation = (conversationId: DConversationId | null) => useCh
     prependNewConversation: state.prependNewConversation,
     branchConversation: state.branchConversation,
     deleteConversations: state.deleteConversations,
-    setMessages: state.setMessages,
   };
 }, shallow);
