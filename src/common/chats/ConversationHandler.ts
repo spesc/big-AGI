@@ -5,9 +5,10 @@ import { SystemPurposeId, SystemPurposes } from '../../data';
 
 import { ChatActions, createDMessage, DConversationId, DMessage, getConversationSystemPurposeId, useChatStore } from '../state/store-chats';
 
-import { createBeamStore } from '~/common/beam/store-beam';
+import { createBeamVanillaStore } from '~/modules/beam/store-beam-vanilla';
 
 import { EphemeralHandler, EphemeralsStore } from './EphemeralsStore';
+import { createChatOverlayVanillaStore } from './store-chat-overlay-vanilla';
 
 
 /**
@@ -20,7 +21,8 @@ export class ConversationHandler {
   private readonly chatActions: ChatActions;
   private readonly conversationId: DConversationId;
 
-  private readonly beamStore = createBeamStore();
+  private readonly beamStore = createBeamVanillaStore();
+  private readonly overlayStore = createChatOverlayVanillaStore();
   readonly ephemeralsStore: EphemeralsStore = new EphemeralsStore();
 
 
@@ -129,5 +131,10 @@ export class ConversationHandler {
   createEphemeral(title: string, initialText: string): EphemeralHandler {
     return new EphemeralHandler(title, initialText, this.ephemeralsStore);
   }
+
+
+  // Overlay Store
+
+  getOverlayStore = () => this.overlayStore;
 
 }

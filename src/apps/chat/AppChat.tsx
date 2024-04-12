@@ -1,43 +1,47 @@
 import * as React from 'react';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 
+import type { SxProps } from '@mui/joy/styles/types';
 import { useTheme } from '@mui/joy';
 
 import { DiagramConfig, DiagramsModal } from '~/modules/aifn/digrams/DiagramsModal';
 import { FlattenerModal } from '~/modules/aifn/flatten/FlattenerModal';
 import { TradeConfig, TradeModal } from '~/modules/trade/TradeModal';
+import { downloadConversation, openAndLoadConversations } from '~/modules/trade/trade.client';
 import { getChatLLMId, useChatLLM } from '~/modules/llms/store-llms';
 import { imaginePromptFromText } from '~/modules/aifn/imagine/imaginePromptFromText';
 import { speakText } from '~/modules/elevenlabs/elevenlabs.client';
+import { useAreBeamsOpen } from '~/modules/beam/store-beam.hooks';
 import { useCapabilityTextToImage } from '~/modules/t2i/t2i.client';
 
-import { BeamView } from '~/common/beam/BeamView';
 import { ConfirmationModal } from '~/common/components/ConfirmationModal';
 import { ConversationsManager } from '~/common/chats/ConversationsManager';
 import { GlobalShortcutItem, ShortcutKeyName, useGlobalShortcuts } from '~/common/components/useGlobalShortcut';
 import { PanelResizeInset } from '~/common/components/panes/GoodPanelResizeHandler';
+import { ScrollToBottom } from '~/common/scroll-to-bottom/ScrollToBottom';
+import { ScrollToBottomButton } from '~/common/scroll-to-bottom/ScrollToBottomButton';
 import { addSnackbar, removeSnackbar } from '~/common/components/useSnackbarsStore';
 import { createDMessage, DConversationId, DMessage, getConversation, getConversationSystemPurposeId, useConversation } from '~/common/state/store-chats';
 import { getUXLabsHighPerformance, useUXLabsStore } from '~/common/state/store-ux-labs';
-import { themeBgAppChatComposer, themeZIndexBeamView } from '~/common/app.theme';
-import { useAreBeamsOpen } from '~/common/beam/store-beam.hooks';
+import { themeBgAppChatComposer } from '~/common/app.theme';
 import { useFolderStore } from '~/common/state/store-folders';
 import { useIsMobile } from '~/common/components/useMatchMedia';
 import { useOptimaLayout, usePluggableOptimaLayout } from '~/common/layout/optima/useOptimaLayout';
+import { useRouterQuery } from '~/common/app.routes';
 import { useUIPreferencesStore } from '~/common/state/store-ui';
 
 import type { ComposerOutputMultiPart } from './components/composer/composer.types';
 import { ChatBarAltBeam } from './components/ChatBarAltBeam';
 import { ChatBarAltTitle } from './components/ChatBarAltTitle';
 import { ChatBarDropdowns } from './components/ChatBarDropdowns';
+import { ChatBeamWrapper } from './components/ChatBeamWrapper';
 import { ChatDrawerMemo } from './components/ChatDrawer';
 import { ChatMessageList } from './components/ChatMessageList';
 import { ChatPageMenuItems } from './components/ChatPageMenuItems';
 import { Composer } from './components/composer/Composer';
-import { ScrollToBottom } from './components/scroll-to-bottom/ScrollToBottom';
-import { ScrollToBottomButton } from './components/scroll-to-bottom/ScrollToBottomButton';
 import { getInstantAppChatPanesCount, usePanesManager } from './components/panes/usePanesManager';
 
+import { DEV_MODE_SETTINGS } from '../settings-modal/UxLabsSettings';
 import { extractChatCommand, findAllChatCommands } from './commands/commands.registry';
 import { runAssistantUpdatingState } from './editors/chat-stream';
 import { runBrowseGetPageUpdatingState } from './editors/browse-load';
@@ -60,6 +64,24 @@ export type ChatModeId =
   | 'generate-react';
 
 
+export interface AppChatIntent {
+  initialConversationId: string | null;
+}
+
+
+const composerOpenSx: SxProps = {
+  zIndex: 21, // just to allocate a surface, and potentially have a shadow
+  backgroundColor: themeBgAppChatComposer,
+  borderTop: `1px solid`,
+  borderTopColor: 'divider',
+  p: { xs: 1, md: 2 },
+};
+
+const composerClosedSx: SxProps = {
+  display: 'none',
+};
+
+
 export function AppChat() {
 
   // state
@@ -79,7 +101,9 @@ export function AppChat() {
 
   const isMobile = useIsMobile();
 
-  const showAltTitleBar = useUXLabsStore(state => state.labsChatBarAlt === 'title');
+  const intent = useRouterQuery<Partial<AppChatIntent>>();
+
+  const showAltTitleBar = useUXLabsStore(state => DEV_MODE_SETTINGS && state.labsChatBarAlt === 'title');
 
   const { openLlmOptions } = useOptimaLayout();
 
@@ -158,6 +182,11 @@ export function AppChat() {
     if (navigateHistoryInFocusedPane(direction))
       showNextTitleChange.current = true;
   }, [navigateHistoryInFocusedPane]);
+
+  // [effect] Handle the initial conversation intent
+  React.useEffect(() => {
+    intent.initialConversationId && handleOpenConversationInFocusedPane(intent.initialConversationId);
+  }, [handleOpenConversationInFocusedPane, intent.initialConversationId]);
 
   // [effect] Show snackbar with the focused chat title after a history navigation in focused pane
   React.useEffect(() => {
@@ -297,13 +326,13 @@ export function AppChat() {
     const userText = multiPartMessage[0].text;
 
     // multicast: send the message to all the panes
-    const uniqueIds = new Set([conversationId]);
+    const uniqueConversationIds = new Set([conversationId]);
     if (willMulticast)
-      chatPanes.forEach(pane => pane.conversationId && uniqueIds.add(pane.conversationId));
+      chatPanes.forEach(pane => pane.conversationId && uniqueConversationIds.add(pane.conversationId));
 
     // we loop to handle both the normal and multicast modes
     let enqueued = false;
-    for (const _cId of uniqueIds) {
+    for (const _cId of uniqueConversationIds) {
       const _conversation = getConversation(_cId);
       if (_conversation) {
         // start execution fire/forget
@@ -328,6 +357,7 @@ export function AppChat() {
   }, [_handleExecute, focusedPaneConversationId]);
 
   const handleMessageBeamLastInFocusedPane = React.useCallback(async () => {
+    // Ctrl + Shift + B
     const focusedConversation = getConversation(focusedPaneConversationId);
     if (focusedConversation?.messages?.length) {
       const lastMessage = focusedConversation.messages[focusedConversation.messages.length - 1];
@@ -381,6 +411,32 @@ export function AppChat() {
 
   const handleConversationExport = React.useCallback((conversationId: DConversationId | null, exportAll: boolean) => {
     setTradeConfig({ dir: 'export', conversationId, exportAll });
+  }, []);
+
+  const handleFileOpenConversation = React.useCallback(() => {
+    openAndLoadConversations(true)
+      .then((outcome) => {
+        // activate the last (most recent) imported conversation
+        if (outcome?.activateConversationId) {
+          showNextTitleChange.current = true;
+          handleOpenConversationInFocusedPane(outcome.activateConversationId);
+        }
+      })
+      .catch(() => {
+        addSnackbar({ key: 'chat-import-fail', message: 'Could not open the file.', type: 'issue' });
+      });
+  }, [handleOpenConversationInFocusedPane]);
+
+  const handleFileSaveConversation = React.useCallback((conversationId: DConversationId | null) => {
+    const conversation = getConversation(conversationId);
+    conversation && downloadConversation(conversation, 'json')
+      .then(() => {
+        addSnackbar({ key: 'chat-save-as-ok', message: 'File saved.', type: 'success' });
+      })
+      .catch((err: any) => {
+        if (err?.name !== 'AbortError')
+          addSnackbar({ key: 'chat-save-as-fail', message: `Could not save the file. ${err?.message || ''}`, type: 'issue' });
+      });
   }, []);
 
   const handleConversationBranch = React.useCallback((srcConversationId: DConversationId, messageId: string | null): DConversationId | null => {
@@ -443,6 +499,8 @@ export function AppChat() {
     ['b', true, true, false, handleMessageBeamLastInFocusedPane],
     ['r', true, true, false, handleMessageRegenerateLastInFocusedPane],
     ['n', true, false, true, handleConversationNewInFocusedPane],
+    ['o', true, false, false, handleFileOpenConversation],
+    ['s', true, false, false, () => handleFileSaveConversation(focusedPaneConversationId)],
     ['b', true, false, true, () => isFocusedChatEmpty || (focusedPaneConversationId && handleConversationBranch(focusedPaneConversationId, null))],
     ['x', true, false, true, () => isFocusedChatEmpty || (focusedPaneConversationId && handleConversationClear(focusedPaneConversationId))],
     ['d', true, false, true, () => focusedPaneConversationId && handleDeleteConversations([focusedPaneConversationId], false)],
@@ -452,7 +510,7 @@ export function AppChat() {
     ['o', true, true, false, handleOpenChatLlmOptions],
     ['+', true, true, false, useUIPreferencesStore.getState().increaseContentScaling],
     ['-', true, true, false, useUIPreferencesStore.getState().decreaseContentScaling],
-  ], [focusedPaneConversationId, handleConversationBranch, handleConversationClear, handleConversationNewInFocusedPane, handleDeleteConversations, handleMessageBeamLastInFocusedPane, handleMessageRegenerateLastInFocusedPane, handleNavigateHistoryInFocusedPane, handleOpenChatLlmOptions, isFocusedChatEmpty]);
+  ], [focusedPaneConversationId, handleConversationBranch, handleConversationClear, handleConversationNewInFocusedPane, handleFileOpenConversation, handleFileSaveConversation, handleDeleteConversations, handleMessageBeamLastInFocusedPane, handleMessageRegenerateLastInFocusedPane, handleNavigateHistoryInFocusedPane, handleOpenChatLlmOptions, isFocusedChatEmpty]);
   useGlobalShortcuts(shortcuts);
 
 
@@ -461,11 +519,11 @@ export function AppChat() {
   const barAltTitle = showAltTitleBar ? focusedChatTitle ?? 'No Chat' : null;
 
   const focusedBarContent = React.useMemo(() => beamOpenStoreInFocusedPane
-      ? <ChatBarAltBeam beamStore={beamOpenStoreInFocusedPane} />
+      ? <ChatBarAltBeam beamStore={beamOpenStoreInFocusedPane} isMobile={isMobile} />
       : (barAltTitle === null)
         ? <ChatBarDropdowns conversationId={focusedPaneConversationId} />
         : <ChatBarAltTitle conversationId={focusedPaneConversationId} conversationTitle={barAltTitle} />
-    , [barAltTitle, beamOpenStoreInFocusedPane, focusedPaneConversationId],
+    , [barAltTitle, beamOpenStoreInFocusedPane, focusedPaneConversationId, isMobile],
   );
 
   const drawerContent = React.useMemo(() =>
@@ -564,13 +622,8 @@ export function AppChat() {
 
             <ScrollToBottom
               bootToBottom
-              stickToBottom
-              sx={{
-                // allows the content to be scrolled (all browsers)
-                overflowY: 'auto',
-                // actually make sure this scrolls & fills
-                height: '100%',
-              }}
+              stickToBottomInitial
+              sx={_paneChatBeamIsOpen ? { display: 'none' } : undefined}
             >
 
               <ChatMessageList
@@ -608,19 +661,7 @@ export function AppChat() {
             </ScrollToBottom>
 
             {(_paneChatBeamIsOpen && !!_paneChatBeamStore) && (
-              // <Modal open onClose={() => console.log('CLOSE!')}>
-              <BeamView
-                beamStore={_paneChatBeamStore}
-                isMobile={isMobile}
-                showExplainer
-                sx={{
-                  backgroundColor: 'background.level1',
-                  position: 'absolute',
-                  inset: 0,
-                  zIndex: themeZIndexBeamView, // stay on top of Message > Chips (:1), and Overlays (:2) - note: Desktop Drawer (:26)
-                }}
-              />
-              // </Modal>
+              <ChatBeamWrapper beamStore={_paneChatBeamStore} isMobile={isMobile} />
             )}
 
           </Panel>
@@ -648,15 +689,7 @@ export function AppChat() {
       onAction={handleComposerAction}
       onTextImagine={handleTextImagine}
       setIsMulticast={setIsComposerMulticast}
-      sx={beamOpenStoreInFocusedPane ? {
-        display: 'none',
-      } : {
-        zIndex: 21, // just to allocate a surface, and potentially have a shadow
-        backgroundColor: themeBgAppChatComposer,
-        borderTop: `1px solid`,
-        borderTopColor: 'divider',
-        p: { xs: 1, md: 2 },
-      }}
+      sx={beamOpenStoreInFocusedPane ? composerClosedSx : composerOpenSx}
     />
 
     {/* Diagrams */}
