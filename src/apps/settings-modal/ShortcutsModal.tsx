@@ -2,7 +2,7 @@ import * as React from 'react';
 
 import { AutoBlocksRenderer } from '~/modules/blocks/AutoBlocksRenderer';
 
-import { GoodModal } from '~/common/components/GoodModal';
+import { GoodModal } from '~/common/components/modals/GoodModal';
 import { platformAwareKeystrokes } from '~/common/components/KeyStroke';
 import { useIsMobile } from '~/common/components/useMatchMedia';
 import { useUIContentScaling } from '~/common/state/store-ui';
@@ -15,8 +15,9 @@ const shortcutsMd = platformAwareKeystrokes(`
 | **Edit**         |                                         |
 | Shift + Enter    | Newline                                 |
 | Alt + Enter      | Append (no response)                    |
+| Ctrl + Shift + Z | **Regenerate** last message             |
 | Ctrl + Shift + B | **Beam** last message                   |
-| Ctrl + Shift + Z | **REgenerate** last message             |
+| Ctrl + Shift + F | Attach file                             |
 | Ctrl + Shift + V | Attach clipboard (better than Ctrl + V) |
 | Ctrl + M         | Microphone (voice typing)               |
 | **Chats**        |                                         |

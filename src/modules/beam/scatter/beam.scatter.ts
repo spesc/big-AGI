@@ -1,6 +1,6 @@
 import type { StateCreator } from 'zustand/vanilla';
 
-import { aixChatGenerateContentStreaming, AixChatGenerateDMessageUpdate } from '~/modules/aix/client/aix.client';
+import { AixChatGenerateContent_DMessage, aixChatGenerateContent_DMessage_FromHistory } from '~/modules/aix/client/aix.client';
 
 import type { DLLMId } from '~/common/stores/llms/llms.types';
 import { agiUuid } from '~/common/util/idUtils';
@@ -55,7 +55,7 @@ function rayScatterStart(ray: BRay, llmId: DLLMId | null, inputHistory: DMessage
 
   const abortController = new AbortController();
 
-  const onMessageUpdated = (incrementalMessage: AixChatGenerateDMessageUpdate, completed: boolean) => {
+  const onMessageUpdated = (incrementalMessage: AixChatGenerateContent_DMessage, completed: boolean) => {
     const { fragments: incrementalFragments, ...incrementalRest } = incrementalMessage;
     _rayUpdate(ray.rayId, (ray) => ({
       message: {
@@ -69,12 +69,11 @@ function rayScatterStart(ray: BRay, llmId: DLLMId | null, inputHistory: DMessage
   };
 
   // stream the ray's messages directly to the state store
-  aixChatGenerateContentStreaming(
+  aixChatGenerateContent_DMessage_FromHistory(
     llmId,
     inputHistory,
     'beam-scatter', ray.rayId,
-    getUXLabsHighPerformance() ? 0 : rays.length,
-    abortController.signal,
+    { abortSignal: abortController.signal, throttleParallelThreads: getUXLabsHighPerformance() ? 0 : rays.length },
     onMessageUpdated,
   )
     .then((status) => {

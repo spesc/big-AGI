@@ -502,14 +502,15 @@ export namespace AixWire_Particles {
     TCacheRead?: number,
     TCacheWrite?: number,
     TOut?: number,
-
-    // v = Tokens/s
-    vTOutInner?: number,  // TOut / dtInner
+    TOutR?: number,
 
     // dt = milliseconds
     dtStart?: number,
     dtInner?: number,
     dtAll?: number,
+
+    // v = Tokens/s
+    vTOutInner?: number,  // TOut / dtInner
   };
 
   // TextParticle / PartParticle - keep in line with the DMessage*Part counterparts

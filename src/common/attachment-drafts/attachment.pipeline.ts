@@ -1,3 +1,5 @@
+import type { FileWithHandle } from 'browser-fs-access';
+
 import { callBrowseFetchPage } from '~/modules/browse/browse.client';
 import { extractYoutubeVideoIDFromURL } from '~/modules/youtube/youtube.utils';
 import { youTubeGetVideoData } from '~/modules/youtube/useYouTubeTranscript';
@@ -9,7 +11,7 @@ import { pdfToImageDataURLs, pdfToText } from '~/common/util/pdfUtils';
 
 import { createDMessageDataInlineText, createDocAttachmentFragment, DMessageAttachmentFragment, DMessageDataInline, DMessageDocPart, DVMimeType, isContentOrAttachmentFragment, isDocPart, specialContentPartToDocAttachmentFragment } from '~/common/stores/chat/chat.fragments';
 
-import type { AttachmentDraft, AttachmentDraftConverter, AttachmentDraftInput, AttachmentDraftSource, DraftEgoFragmentsInputData, DraftWebInputData, DraftYouTubeInputData } from './attachment.types';
+import type { AttachmentDraft, AttachmentDraftConverter, AttachmentDraftId, AttachmentDraftInput, AttachmentDraftSource, AttachmentDraftSourceOriginFile, DraftEgoFragmentsInputData, DraftWebInputData, DraftYouTubeInputData } from './attachment.types';
 import type { AttachmentsDraftsStore } from './store-attachment-drafts-slice';
 import { attachmentGetLiveFileId, attachmentSourceSupportsLiveFile } from './attachment.livefile';
 import { guessInputContentTypeFromMime, heuristicMimeTypeFixup, mimeTypeIsDocX, mimeTypeIsPDF, mimeTypeIsPlainText, mimeTypeIsSupportedImage, reverseLookupMimeType } from './attachment.mimetypes';
@@ -21,6 +23,8 @@ export const DEFAULT_ADRAFT_IMAGE_MIMETYPE = 'image/webp';
 export const DEFAULT_ADRAFT_IMAGE_QUALITY = 0.96;
 const PDF_IMAGE_PAGE_SCALE = 1.5;
 const PDF_IMAGE_QUALITY = 0.5;
+const PDF_PREFER_TEXT_AND_IMAGES = false;
+
 
 // internal mimes, only used to route data within us (source -> input -> converters)
 const INT_MIME_VND_AGI_EGO_FRAGMENTS = 'application/vnd.agi.ego.fragments';
@@ -246,8 +250,9 @@ export function attachmentDefineConverters(source: AttachmentDraftSource, input:
 
     // PDF
     case mimeTypeIsPDF(input.mimeType):
-      converters.push({ id: 'pdf-text', name: 'PDF To Text (OCR)' });
+      converters.push({ id: 'pdf-text', name: 'PDF To Text', isActive: !PDF_PREFER_TEXT_AND_IMAGES || undefined });
       converters.push({ id: 'pdf-images', name: 'PDF To Images' });
+      converters.push({ id: 'pdf-text-and-images', name: 'PDF Text & Images (best)', isActive: PDF_PREFER_TEXT_AND_IMAGES || undefined });
       break;
 
     // DOCX
@@ -417,7 +422,7 @@ function _guessDocVDT(inputMimeType: string): DMessageDocPart['vdt'] {
  */
 export async function attachmentPerformConversion(
   attachment: Readonly<AttachmentDraft>,
-  edit: AttachmentsDraftsStore['_editAttachment'],
+  edit: (attachmentDraftId: AttachmentDraftId, update: Partial<Omit<AttachmentDraft, 'outputFragments'>>) => void, /* AttachmentsDraftsStore['_editAttachment'] */
   replaceOutputFragments: AttachmentsDraftsStore['_replaceAttachmentOutputFragments'],
 ) {
 
@@ -448,7 +453,7 @@ export async function attachmentPerformConversion(
       // text as-is
       case 'text':
         const possibleLiveFileId = await attachmentGetLiveFileId(source);
-        const textualInlineData = createDMessageDataInlineText(inputDataToString(input.data), input.mimeType);
+        const textualInlineData = createDMessageDataInlineText(_inputDataToString(input.data), input.mimeType);
         newFragments.push(createDocAttachmentFragment(title, caption, _guessDocVDT(input.mimeType), textualInlineData, refString, docMeta, possibleLiveFileId));
         break;
 
@@ -481,7 +486,7 @@ export async function attachmentPerformConversion(
           tableData = createDMessageDataInlineText(mdTable, 'text/markdown');
         } catch (error) {
           // fallback to text/plain
-          tableData = createDMessageDataInlineText(inputDataToString(input.data), input.mimeType);
+          tableData = createDMessageDataInlineText(_inputDataToString(input.data), input.mimeType);
         }
         newFragments.push(createDocAttachmentFragment(title, caption, tableData.mimeType === 'text/markdown' ? DVMimeType.TextPlain : DVMimeType.TextPlain, tableData, refString, docMeta));
         break;
@@ -593,6 +598,37 @@ export async function attachmentPerformConversion(
           }
         } catch (error) {
           console.error('Error converting PDF to images:', error);
+        }
+        break;
+
+      // pdf to text and images
+      case 'pdf-text-and-images':
+        if (!(input.data instanceof ArrayBuffer)) {
+          console.log('Expected ArrayBuffer for PDF text and images converter, got:', typeof input.data);
+          break;
+        }
+        try {
+          // duplicated from from 'pdf-images' (different progress update)
+          const imageFragments: DMessageAttachmentFragment[] = [];
+          const imageDataURLs = await pdfToImageDataURLs(new Uint8Array(input.data.slice(0)), DEFAULT_ADRAFT_IMAGE_MIMETYPE, PDF_IMAGE_QUALITY, PDF_IMAGE_PAGE_SCALE, (progress) => {
+            edit(attachment.id, { outputsConversionProgress: progress / 2 }); // Update progress (0% to 50%)
+          });
+          for (const pdfPageImage of imageDataURLs) {
+            const pdfPageImageF = await imageDataToImageAttachmentFragmentViaDBlob(pdfPageImage.mimeType, pdfPageImage.base64Data, source, `${title} (pg. ${newFragments.length + 1})`, caption, false, false);
+            if (pdfPageImageF)
+              imageFragments.push(pdfPageImageF);
+          }
+
+          // duplicated from 'pdf-text'
+          const pdfText = await pdfToText(new Uint8Array(input.data.slice(0)), (progress: number) => {
+            edit(attachment.id, { outputsConversionProgress: 0.5 + progress / 2 }); // Update progress (50% to 100%)
+          });
+          const textFragment = createDocAttachmentFragment(title, caption, DVMimeType.TextPlain, createDMessageDataInlineText(pdfText, 'text/plain'), refString, { ...docMeta, srcOcrFrom: 'pdf' });
+
+          // Add the text fragment first, then the image fragments
+          newFragments.push(textFragment, ...imageFragments);
+        } catch (error) {
+          console.error('Error converting PDF to text and images:', error);
         }
         break;
 
@@ -723,11 +759,78 @@ export async function attachmentPerformConversion(
 }
 
 
-function inputDataToString(data: AttachmentDraftInput['data']): string {
+function _inputDataToString(data: AttachmentDraftInput['data']): string {
   if (typeof data === 'string')
     return data;
   if (data instanceof ArrayBuffer)
     return new TextDecoder('utf-8', { fatal: false }).decode(data);
-  console.log('attachment.inputDataToString: expected string or ArrayBuffer, got:', typeof data);
+  console.log('attachment._inputDataToString: expected string or ArrayBuffer, got:', typeof data);
   return '';
+}
+
+
+/**
+ * Special function to convert a list of files to Attachment Fragments, without passing through the attachments system
+ *
+ * Uses the default conversion whenever multiple are available, as we don't have the chance to ask
+ * for user input here, whereas we do in the Attachments UI.
+ *
+ * Only returns the fragments that were successfully converted.
+ */
+export async function convertFilesToDAttachmentFragments(origin: AttachmentDraftSourceOriginFile, files: FileWithHandle[]): Promise<DMessageAttachmentFragment[]> {
+  const validOutputFragmentsList: DMessageAttachmentFragment[][] = [];
+
+  for (const fileWithHandle of files) {
+
+    // This is the draft we'll edit and update
+    const _draft = attachmentCreate({
+      media: 'file', origin, fileWithHandle, refPath: fileWithHandle.name,
+    });
+
+    // Function to update the attachment draft
+    const updateDraft =
+      (changes: Partial<Omit<AttachmentDraft, 'outputFragments'>>) => Object.assign(_draft, changes);
+
+    try {
+      // 1. Load the input
+      await attachmentLoadInputAsync(_draft.source, updateDraft);
+      if (!_draft.input) {
+        console.warn('', `Failed to load input for file: ${fileWithHandle.name}`);
+        continue;
+      }
+
+      // 2. Define converters
+      attachmentDefineConverters(_draft.source, _draft.input, updateDraft);
+      if (!_draft.converters.length) {
+        console.warn(`No converters defined for file: ${fileWithHandle.name}`);
+        continue;
+      }
+
+      // 3. Select the already (pre-selected) active, or the first (non-disabled) Converter
+      if (_draft.converters.findIndex(_c => _c.isActive) === -1) {
+        let activateIndex = _draft.converters.findIndex(_c => !_c.disabled);
+        if (activateIndex === -1)
+          activateIndex = 0;
+        _draft.converters[activateIndex].isActive = true;
+      }
+
+      // 4. Perform conversion
+      await attachmentPerformConversion(_draft,
+        (_, update) => updateDraft(update),
+        (_, fragments) => _draft.outputFragments = fragments,
+      );
+      if (!_draft.outputFragments.length) {
+        console.warn(`[DEV] Failed to convert file: ${fileWithHandle.name}`, _draft);
+        continue;
+      }
+
+      validOutputFragmentsList.push(_draft.outputFragments);
+    } catch (error) {
+      console.warn(`Error processing file ${fileWithHandle.name}:`, error);
+      // allFragments.push([]);  // Add an empty array for failed conversions
+    }
+  }
+
+  // flatten the list of lists
+  return validOutputFragmentsList.flat();
 }

@@ -1,4 +1,5 @@
 import * as React from 'react';
+import TimeAgo from 'react-timeago';
 
 import type { SxProps } from '@mui/joy/styles/types';
 import { Avatar, Box } from '@mui/joy';
@@ -29,7 +30,7 @@ export const ANIM_BUSY_TYPING = 'https://i.giphy.com/media/jJxaUysjzO9ri/giphy.w
 export const messageAsideColumnSx: SxProps = {
   // make this stick to the top of the screen
   position: 'sticky',
-  top: 0,
+  top: '0.25rem',
 
   // style
   // filter: 'url(#agi-holographic)',
@@ -63,6 +64,8 @@ export const messageAvatarLabelSx: SxProps = {
 
 export const messageAvatarLabelAnimatedSx: SxProps = {
   animation: `${animationColorRainbow} 5s linear infinite`,
+  // Extra hinting... but looks weird
+  // fontStyle: 'italic',
 };
 
 export const aixSkipBoxSx = {
@@ -207,7 +210,12 @@ const avatarLabelTooltipIconContainerSx: SxProps = {
   gap: 1,
 };
 
-export function useMessageAvatarLabel({ generator, pendingIncomplete }: Pick<DMessage, 'generator' | 'pendingIncomplete'>, complexity: UIComplexityMode): { label: React.ReactNode, tooltip: React.ReactNode } {
+const avatarLabelCreated: SxProps = {
+  fontSize: 'xs',
+  color: 'text.tertiary',
+};
+
+export function useMessageAvatarLabel({ generator, pendingIncomplete, created, updated }: Pick<DMessage, 'generator' | 'pendingIncomplete' | 'created' | 'updated'>, complexity: UIComplexityMode): { label: React.ReactNode, tooltip: React.ReactNode } {
   return React.useMemo(() => {
     if (!generator) {
       return {
@@ -217,11 +225,15 @@ export function useMessageAvatarLabel({ generator, pendingIncomplete }: Pick<DMe
     }
 
     // incomplete: just the name
-    const prettyName = prettyBaseModel(generator.name);
+    const prettyName = prettyShortChatModelName(generator.name);
     if (pendingIncomplete)
       return {
         label: prettyName,
-        tooltip: null,
+        tooltip: (!created || complexity === 'minimal') ? null : (
+          <Box sx={avatarLabelTooltipSx}>
+            <TimeAgo date={created} formatter={(value: number, unit: string, _suffix: string) => `Thinking for ${value} ${unit}${value > 1 ? 's' : ''}...`} />
+          </Box>
+        ),
       };
 
     // named generator: nothing else to do there
@@ -241,16 +253,17 @@ export function useMessageAvatarLabel({ generator, pendingIncomplete }: Pick<DMe
     // aix tooltip: more details
     return {
       label: (stopReason && complexity !== 'minimal') ? <>{prettyName} <small>({stopReason})</small></> : prettyName,
-      tooltip: (
+      tooltip: complexity === 'minimal' ? null : (
         <Box sx={avatarLabelTooltipSx}>
           {VendorIcon ? <Box sx={avatarLabelTooltipIconContainerSx}><VendorIcon />{generator.name}</Box> : <div>{generator.name}</div>}
           {(modelId && complexity === 'extra') && <div>{modelId}</div>}
           {metrics && <div>{metrics}</div>}
           {stopReason && <div>{stopReason}</div>}
+          {complexity === 'extra' && !!created && <Box sx={avatarLabelCreated}>{updated ? 'Updated' : 'Created'} <TimeAgo date={updated || created} />.</Box>}
         </Box>
       ),
     };
-  }, [complexity, generator, pendingIncomplete]);
+  }, [complexity, created, generator, pendingIncomplete, updated]);
 }
 
 const metricsGridSx: SxProps = {
@@ -270,6 +283,7 @@ function _prettyMetrics(metrics: DMessageGenerator['metrics']): React.ReactNode 
       {metrics.TCacheRead !== undefined && <>{', '}<b>{metrics.TCacheRead?.toLocaleString() || ''}</b> read</>}
       {metrics.TCacheWrite !== undefined && <>{', '}<b>{metrics.TCacheWrite?.toLocaleString() || ''}</b> wrote</>}
       {', '}<b>{metrics.TOut?.toLocaleString() || ''}</b> out
+      {metrics.TOutR !== undefined && <> (<b>{metrics.TOutR?.toLocaleString() || ''}</b> for reasoning)</>}
     </div>}
     {metrics?.$c !== undefined && <div>Costs:</div>}
     {metrics?.$c !== undefined && <div>
@@ -320,28 +334,46 @@ function _prettyTokenStopReason(reason: DMessageGenerator['tokenStopReason'], co
 
 /// Base Model pretty name from the model ID - VERY HARDCODED - shall use the Avatar Label-style code instead
 
-export function prettyBaseModel(model: string | undefined): string {
+export function prettyShortChatModelName(model: string | undefined): string {
   if (!model) return '';
+
+  // TODO: fully reform this function to be using information from the DLLM, rather than this manual mapping
+
   // [OpenAI]
-  if (model.includes('gpt-4-vision-preview')) return 'GPT-4 Vision';
-  if (model.includes('gpt-4-1106-preview')) return 'GPT-4 Turbo';
-  if (model.includes('gpt-4-32k')) return 'GPT-4-32k';
-  if (model.includes('gpt-4o-mini')) return 'GPT-4o Mini';
-  if (model.includes('gpt-4o')) return 'GPT-4o';
-  if (model.includes('gpt-4-turbo')) return 'GPT-4 Turbo';
-  if (model.includes('gpt-4')) return 'GPT-4';
-  if (model.includes('gpt-3.5-turbo-instruct')) return '3.5 Turbo Instruct';
-  if (model.includes('gpt-3.5-turbo-1106')) return '3.5 Turbo 16k';
-  if (model.includes('gpt-3.5-turbo-16k')) return '3.5 Turbo 16k';
-  if (model.includes('gpt-3.5-turbo')) return '3.5 Turbo';
+  if (model.includes('o1-')) {
+    if (model.includes('o1-mini')) return 'o1 Mini';
+    if (model.includes('o1-preview')) return 'o1 Preview';
+    return 'o1';
+  }
+  if (model.includes('chatgpt-4o-latest')) return 'ChatGPT 4o';
+  if (model.includes('gpt-4')) {
+    if (model.includes('gpt-4o-mini')) return 'GPT-4o mini';
+    if (model.includes('gpt-4o')) return 'GPT-4o';
+    if (model.includes('gpt-4-0125-preview')
+      || model.includes('gpt-4-1106-preview')
+      || model.includes('gpt-4-turbo')
+    ) return 'GPT-4 Turbo';
+    if (model.includes('gpt-4-32k')) return 'GPT-4-32k';
+    return 'GPT-4';
+  }
+  if (model.includes('gpt-3')) {
+    if (model.includes('gpt-3.5-turbo-instruct')) return 'GPT-3.5 Turbo Instruct';
+    if (model.includes('gpt-3.5-turbo')) return 'GPT-3.5 Turbo';
+    if (model.includes('gpt-35-turbo')) return 'GPT-3.5 Turbo';
+  }
   // [LocalAI?]
   if (model.endsWith('.bin')) return model.slice(0, -4);
   // [Anthropic]
   const prettyAnthropic = _prettyAnthropicModelName(model);
   if (prettyAnthropic) return prettyAnthropic;
+  // [Deepseek]
+  if (model.includes('deepseek-chat')) return 'Deepseek Chat';
+  if (model.includes('deepseek-coder')) return 'Deepseek Coder';
   // [LM Studio]
   if (model.startsWith('C:\\') || model.startsWith('D:\\'))
     return _prettyLMStudioFileModelName(model).replace('.gguf', '');
+  // [Mistral]
+  if (model.includes('mistral-large')) return 'Mistral Large';
   // [Ollama]
   if (model.includes(':'))
     return model.replace(':latest', '').replaceAll(':', ' ');
