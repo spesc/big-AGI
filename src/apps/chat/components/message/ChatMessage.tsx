@@ -16,6 +16,8 @@ import ForkRightIcon from '@mui/icons-material/ForkRight';
 import FormatBoldIcon from '@mui/icons-material/FormatBold';
 import FormatPaintOutlinedIcon from '@mui/icons-material/FormatPaintOutlined';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
+import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive';
+import NotificationsOutlinedIcon from '@mui/icons-material/NotificationsOutlined';
 import RecordVoiceOverOutlinedIcon from '@mui/icons-material/RecordVoiceOverOutlined';
 import ReplayIcon from '@mui/icons-material/Replay';
 import ReplyAllRoundedIcon from '@mui/icons-material/ReplyAllRounded';
@@ -34,7 +36,7 @@ import { ModelVendorAnthropic } from '~/modules/llms/vendors/anthropic/anthropic
 import { AnthropicIcon } from '~/common/components/icons/vendors/AnthropicIcon';
 import { ChatBeamIcon } from '~/common/components/icons/ChatBeamIcon';
 import { CloseableMenu } from '~/common/components/CloseableMenu';
-import { DMessage, DMessageId, DMessageUserFlag, DMetaReferenceItem, MESSAGE_FLAG_AIX_SKIP, MESSAGE_FLAG_STARRED, MESSAGE_FLAG_VND_ANT_CACHE_AUTO, MESSAGE_FLAG_VND_ANT_CACHE_USER, messageFragmentsReduceText, messageHasUserFlag } from '~/common/stores/chat/chat.message';
+import { DMessage, DMessageId, DMessageUserFlag, DMetaReferenceItem, MESSAGE_FLAG_AIX_SKIP, MESSAGE_FLAG_NOTIFY_COMPLETE, MESSAGE_FLAG_STARRED, MESSAGE_FLAG_VND_ANT_CACHE_AUTO, MESSAGE_FLAG_VND_ANT_CACHE_USER, messageFragmentsReduceText, messageHasUserFlag } from '~/common/stores/chat/chat.message';
 import { KeyStroke } from '~/common/components/KeyStroke';
 import { MarkHighlightIcon } from '~/common/components/icons/MarkHighlightIcon';
 import { TooltipOutlined } from '~/common/components/TooltipOutlined';
@@ -191,18 +193,15 @@ export function ChatMessage(props: {
     created: messageCreated,
     updated: messageUpdated,
   } = props.message;
-  const zenMode = uiComplexityMode === 'minimal';
-
-  const messageGeneratorName = messageGenerator?.name;
-  const { label: messageAvatarLabel, tooltip: messageAvatarTooltip } = useMessageAvatarLabel(props.message, uiComplexityMode);
 
   const fromAssistant = messageRole === 'assistant';
   const fromSystem = messageRole === 'system';
   const fromUser = messageRole === 'user';
-  const wasEdited = !!messageUpdated;
+  const messageHasBeenEdited = !!messageUpdated;
 
   const isUserMessageSkipped = messageHasUserFlag(props.message, MESSAGE_FLAG_AIX_SKIP);
   const isUserStarred = messageHasUserFlag(props.message, MESSAGE_FLAG_STARRED);
+  const isUserNotifyComplete = messageHasUserFlag(props.message, MESSAGE_FLAG_NOTIFY_COMPLETE);
   const isVndAndCacheAuto = !!props.showAntPromptCaching && messageHasUserFlag(props.message, MESSAGE_FLAG_VND_ANT_CACHE_AUTO);
   const isVndAndCacheUser = !!props.showAntPromptCaching && messageHasUserFlag(props.message, MESSAGE_FLAG_VND_ANT_CACHE_USER);
 
@@ -245,19 +244,22 @@ export function ChatMessage(props: {
 
   const isEditingText = !!textContentEditState;
 
+  const handleApplyEdit = React.useCallback((fragmentId: DMessageFragmentId, editedText: string) => {
+    if (editedText.length > 0)
+      handleFragmentReplace(fragmentId, createTextContentFragment(editedText));
+    else
+      handleFragmentDelete(fragmentId);
+  }, [handleFragmentDelete, handleFragmentReplace]);
+
   const handleApplyAllEdits = React.useCallback(async (withControl: boolean) => {
     const state = textContentEditState || {};
     setTextContentEditState(null);
-    for (const [fragmentId, editedText] of Object.entries(state)) {
-      if (editedText.length > 0)
-        handleFragmentReplace(fragmentId, createTextContentFragment(editedText));
-      else
-        handleFragmentDelete(fragmentId);
-    }
+    for (const [fragmentId, editedText] of Object.entries(state))
+      handleApplyEdit(fragmentId, editedText);
     // if the user pressed Ctrl, we begin a regeneration from here
     if (withControl && onMessageAssistantFrom)
       await onMessageAssistantFrom(messageId, 0);
-  }, [handleFragmentDelete, handleFragmentReplace, messageId, onMessageAssistantFrom, textContentEditState]);
+  }, [handleApplyEdit, messageId, onMessageAssistantFrom, textContentEditState]);
 
   const handleEditsApplyClicked = React.useCallback(() => handleApplyAllEdits(false), [handleApplyAllEdits]);
 
@@ -265,8 +267,12 @@ export function ChatMessage(props: {
 
   const handleEditsCancel = React.useCallback(() => setTextContentEditState(null), []);
 
-  const handleEditSetText = React.useCallback((fragmentId: DMessageFragmentId, editedText: string) =>
-    setTextContentEditState((prev): ChatMessageTextPartEditState => ({ ...prev, [fragmentId]: editedText || '' })), []);
+  const handleEditSetText = React.useCallback((fragmentId: DMessageFragmentId, editedText: string, applyNow: boolean) => {
+    if (applyNow)
+      handleApplyEdit(fragmentId, editedText);
+    else
+      setTextContentEditState((prev): ChatMessageTextPartEditState => ({ ...prev, [fragmentId]: editedText || '' }));
+  }, [handleApplyEdit]);
 
 
   // Message Operations Menu
@@ -306,6 +312,10 @@ export function ChatMessage(props: {
 
   const handleOpsToggleStarred = React.useCallback(() => {
     onMessageToggleUserFlag?.(messageId, MESSAGE_FLAG_STARRED);
+  }, [messageId, onMessageToggleUserFlag]);
+
+  const handleOpsToggleNotifyComplete = React.useCallback(() => {
+    onMessageToggleUserFlag?.(messageId, MESSAGE_FLAG_NOTIFY_COMPLETE);
   }, [messageId, onMessageToggleUserFlag]);
 
   const handleOpsAssistantFrom = async (e: React.MouseEvent) => {
@@ -499,7 +509,7 @@ export function ChatMessage(props: {
 
 
   // style
-  const backgroundColor = messageBackground(messageRole, wasEdited, false /*isAssistantError && !errorMessage*/);
+  const backgroundColor = messageBackground(messageRole, messageHasBeenEdited, false /*isAssistantError && !errorMessage*/);
 
   const listItemSx: SxProps = React.useMemo(() => ({
     // vars
@@ -556,12 +566,18 @@ export function ChatMessage(props: {
   }), [adjContentScaling, backgroundColor, isUserMessageSkipped, isUserStarred, isVndAndCacheAuto, isVndAndCacheUser, props.sx, uiComplexityMode]);
 
 
-  // avatar
+  // avatar icon & label & tooltip
+
+  const zenMode = uiComplexityMode === 'minimal';
+
   const showAvatarIcon = !props.hideAvatar && !zenMode;
-  const avatarIconEl: React.JSX.Element | null = React.useMemo(
-    () => showAvatarIcon ? makeMessageAvatarIcon(uiComplexityMode, messageRole, messageGeneratorName, messagePurposeId, !!messagePendingIncomplete, isUserMessageSkipped, true) : null,
-    [isUserMessageSkipped, messageGeneratorName, messagePendingIncomplete, messagePurposeId, messageRole, showAvatarIcon, uiComplexityMode],
+  const messageGeneratorName = messageGenerator?.name;
+  const messageAvatarIcon = React.useMemo(
+    () => !showAvatarIcon ? null : makeMessageAvatarIcon(uiComplexityMode, messageRole, messageGeneratorName, messagePurposeId, !!messagePendingIncomplete, isUserMessageSkipped, isUserNotifyComplete, true),
+    [isUserMessageSkipped, isUserNotifyComplete, messageGeneratorName, messagePendingIncomplete, messagePurposeId, messageRole, showAvatarIcon, uiComplexityMode],
   );
+
+  const { label: messageAvatarLabel, tooltip: messageAvatarTooltip } = useMessageAvatarLabel(props.message, uiComplexityMode);
 
 
   return (
@@ -600,7 +616,7 @@ export function ChatMessage(props: {
               sx={personaAvatarOrMenuSx}
             >
               {showAvatarIcon && !isHovering && !opsMenuAnchor ? (
-                avatarIconEl
+                messageAvatarIcon
               ) : (
                 <IconButton
                   size='sm'
@@ -615,7 +631,7 @@ export function ChatMessage(props: {
 
             {/* Assistant (llm/function) name */}
             {fromAssistant && !zenMode && (
-              <TooltipOutlined asLargePane title={messageAvatarTooltip} placement='bottom-start'>
+              <TooltipOutlined asLargePane enableInteractive title={messageAvatarTooltip} placement='bottom-start'>
                 <Typography level='body-xs' sx={messagePendingIncomplete ? messageAvatarLabelAnimatedSx : messageAvatarLabelSx}>
                   {messageAvatarLabel}
                 </Typography>
@@ -651,7 +667,7 @@ export function ChatMessage(props: {
           )}
 
           {/* (special case) System modified warning */}
-          {fromSystem && wasEdited && (
+          {fromSystem && messageHasBeenEdited && (
             <Typography level='body-sm' color='warning' sx={{ mt: 1, mx: 1.5, textAlign: 'end' }}>
               modified by user - auto-update disabled
             </Typography>
@@ -663,11 +679,12 @@ export function ChatMessage(props: {
           )}
 
           {/* Image Attachment Fragments - just for a prettier display on top of the message */}
-          {imageAttachments.length >= 1 && !isEditingText && (
+          {imageAttachments.length >= 1 && (
             <ImageAttachmentFragments
               imageAttachments={imageAttachments}
               contentScaling={adjContentScaling}
               messageRole={messageRole}
+              disabled={isEditingText}
               onFragmentDelete={handleFragmentDelete}
             />
           )}
@@ -801,6 +818,15 @@ export function ChatMessage(props: {
               </MenuItem>
             )}
           </Box>
+
+          {/* Notify Complete */}
+          {messagePendingIncomplete && !!onMessageToggleUserFlag && <ListDivider />}
+          {messagePendingIncomplete && !!onMessageToggleUserFlag && (
+            <MenuItem onClick={handleOpsToggleNotifyComplete}>
+              <ListItemDecorator>{isUserNotifyComplete ? <NotificationsActiveIcon /> : <NotificationsOutlinedIcon />}</ListItemDecorator>
+              Notify on reply
+            </MenuItem>
+          )}
 
           <ListDivider />
 

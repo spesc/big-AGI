@@ -53,7 +53,7 @@ export function ContentFragments(props: {
   showUnsafeHtmlCode?: boolean,
 
   textEditsState: ChatMessageTextPartEditState | null,
-  setEditedText: (fragmentId: DMessageFragmentId, value: string) => void,
+  setEditedText: (fragmentId: DMessageFragmentId, value: string, applyNow: boolean) => void,
   onEditsApply: (withControl: boolean) => void,
   onEditsCancel: () => void,
 
@@ -70,6 +70,7 @@ export function ContentFragments(props: {
   const fromUser = props.messageRole === 'user';
   const isEditingText = !!props.textEditsState;
   // const isMonoFragment = props.fragments.length < 2;
+  const enableRestartFromEdit = !fromAssistant && props.messageRole !== 'system';
 
   // Content Fragments Edit Zero-State: button to create a new TextContentFragment
   if (isEditingText && !props.fragments.length)
@@ -115,7 +116,7 @@ export function ContentFragments(props: {
             textPartText={isTextPart(fragment.part) ? fragment.part.text : fragment.part.error}
             fragmentId={fragment.fId}
             contentScaling={props.contentScaling}
-            enableRestart={!fromAssistant}
+            enableRestart={enableRestartFromEdit}
             editedText={props.textEditsState[fragment.fId]}
             setEditedText={props.setEditedText}
             onSubmit={props.onEditsApply}
@@ -169,6 +170,8 @@ export function ContentFragments(props: {
               key={fragment.fId}
               // ref={blocksRendererRef}
               textPartText={fragment.part.text}
+              setEditedText={props.setEditedText}
+              fragmentId={fragment.fId}
               messageRole={props.messageRole}
               contentScaling={props.contentScaling}
               fitScreen={props.fitScreen}

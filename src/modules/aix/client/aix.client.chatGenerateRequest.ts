@@ -2,6 +2,7 @@ import { getImageAsset } from '~/modules/dblobs/dblobs.images';
 
 import { DMessage, DMetaReferenceItem, MESSAGE_FLAG_AIX_SKIP, MESSAGE_FLAG_VND_ANT_CACHE_AUTO, MESSAGE_FLAG_VND_ANT_CACHE_USER, messageHasUserFlag } from '~/common/stores/chat/chat.message';
 import { DMessageImageRefPart, isContentFragment, isContentOrAttachmentFragment, isTextPart } from '~/common/stores/chat/chat.fragments';
+import { Is } from '~/common/util/pwaUtils';
 import { LLMImageResizeMode, resizeBase64ImageIfNeeded } from '~/common/util/imageUtils';
 
 // NOTE: pay particular attention to the "import type", as this is importing from the server-side Zod definitions
@@ -11,27 +12,11 @@ import type { AixAPIChatGenerate_Request, AixMessages_ChatMessage, AixMessages_M
 
 
 // configuration
-export const MODEL_IMAGE_RESCALE_MIMETYPE = 'image/webp';
+export const MODEL_IMAGE_RESCALE_MIMETYPE = !Is.Browser.Safari ? 'image/webp' : 'image/jpeg';
 export const MODEL_IMAGE_RESCALE_QUALITY = 0.90;
 
 
 // AIX <> Simple Text API helpers
-
-function aixCGRTextPart(text: string) {
-  return { pt: 'text' as const, text };
-}
-
-export function aixCGR_SystemMessage(text: string) {
-  return { parts: [aixCGRTextPart(text)] };
-}
-
-function aixCGR_UserMessageText(text: string): AixMessages_UserMessage {
-  return { role: 'user', parts: [aixCGRTextPart(text)] };
-}
-
-function aixCGR_ModelMessageText(text: string): AixMessages_ModelMessage {
-  return { role: 'model', parts: [aixCGRTextPart(text)] };
-}
 
 export function aixChatGenerateRequestSimple(systemMessage: string, messages: { role: AixMessages_ChatMessage['role'], text: string }[]): AixAPIChatGenerate_Request {
   return {
@@ -46,6 +31,22 @@ export function aixChatGenerateRequestSimple(systemMessage: string, messages: { 
       }
     }),
   };
+}
+
+export function aixCGR_SystemMessage(text: string) {
+  return { parts: [aixCGRTextPart(text)] };
+}
+
+function aixCGR_UserMessageText(text: string): AixMessages_UserMessage {
+  return { role: 'user', parts: [aixCGRTextPart(text)] };
+}
+
+function aixCGR_ModelMessageText(text: string): AixMessages_ModelMessage {
+  return { role: 'model', parts: [aixCGRTextPart(text)] };
+}
+
+function aixCGRTextPart(text: string) {
+  return { pt: 'text' as const, text };
 }
 
 
