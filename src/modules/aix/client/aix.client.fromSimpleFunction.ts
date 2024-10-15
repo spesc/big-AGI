@@ -62,34 +62,40 @@ function _recursiveObjectSchemaCleanup(obj: Record<string, any>, thisKey?: strin
 
 
 /** Extract the function name from the Aix FunctionCall Tool Definition */
-export function aixRequireSingleFunctionCallInvocation(fragments: DMessageContentFragment[], expectedFunctionName: string, debugLabel: string): {
+export function aixRequireSingleFunctionCallInvocation(fragments: DMessageContentFragment[], expectedFunctionName: string, allowThinkPart: boolean, debugLabel: string): {
   invocation: Extract<DMessageToolInvocationPart['invocation'], { type: 'function_call' }>;
   argsObject: object;
 } {
 
-  if (!Array.isArray(fragments) || fragments.length !== 1) {
+  if (!Array.isArray(fragments) || !(fragments.length >= 1)) {
     if (AIX_DEBUG_CLIENT_TOOLS)
-      console.error('[DEV] single-function-call: invalid fragments:', fragments, 'for', debugLabel);
+      console.error(`[DEV] single-function-call (${debugLabel}): invalid fragments:`, { fragments });
     throw new Error('AIX: Unexpected response.');
   }
 
-  if (!isContentFragment(fragments[0]) || fragments[0].part.pt !== 'tool_invocation') {
+  const toolIdx = allowThinkPart ? fragments.length - 1 : 0;
+  if (!isContentFragment(fragments[toolIdx]) || fragments[toolIdx].part.pt !== 'tool_invocation') {
     if (AIX_DEBUG_CLIENT_TOOLS)
-      console.error('[DEV] single-function-call: invalid fragment part:', fragments[0].part, 'for', debugLabel);
-    throw new Error('AIX: Missing tool invocation.');
+      console.error(`[DEV] single-function-call (${debugLabel}): invalid fragment part:`, { part: fragments[toolIdx].part });
+
+    // special case, if we have an error part, rethrow that message instead (better error message)
+    if (fragments[toolIdx].part.pt === 'error')
+      throw new Error('AIX: Error invoking function: ' + fragments[toolIdx].part.error);
+
+    throw new Error('AIX: Missing function invocation.');
   }
 
-  const { invocation } = fragments[0].part;
+  const { invocation } = fragments[toolIdx].part;
 
   if (invocation.type !== 'function_call' || invocation.name !== expectedFunctionName) {
     if (AIX_DEBUG_CLIENT_TOOLS)
-      console.error('[DEV] single-function-call: invalid invocation:', invocation, 'for', debugLabel);
+      console.error(`[DEV] single-function-call (${debugLabel}): invalid invocation:`, { invocation });
     throw new Error('AIX: Expected a function call.');
   }
 
   if (!invocation.args) {
     if (AIX_DEBUG_CLIENT_TOOLS)
-      console.error('[DEV] single-function-call: missing invocation args:', invocation, 'for', debugLabel);
+      console.error(`[DEV] single-function-call (${debugLabel}): missing invocation args:`, { invocation });
     throw new Error('AIX: Missing function arguments.');
   }
 
