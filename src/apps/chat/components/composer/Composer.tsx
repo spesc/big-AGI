@@ -33,7 +33,7 @@ import { animationEnterBelow } from '~/common/util/animUtils';
 import { browserSpeechRecognitionCapability, PLACEHOLDER_INTERIM_TRANSCRIPT, SpeechResult, useSpeechRecognition } from '~/common/components/useSpeechRecognition';
 import { conversationTitle, DConversationId } from '~/common/stores/chat/chat.conversation';
 import { copyToClipboard, supportsClipboardRead } from '~/common/util/clipboardUtils';
-import { createTextContentFragment, DMessageAttachmentFragment, DMessageContentFragment, duplicateDMessageFragmentsNoPH } from '~/common/stores/chat/chat.fragments';
+import { createTextContentFragment, DMessageAttachmentFragment, DMessageContentFragment, duplicateDMessageFragmentsNoVoid } from '~/common/stores/chat/chat.fragments';
 import { estimateTextTokens, glueForMessageTokens, marshallWrapDocFragments } from '~/common/stores/chat/chat.tokens';
 import { getConversation, isValidConversation, useChatStore } from '~/common/stores/chat/store-chats';
 import { launchAppCall } from '~/common/app.routes';
@@ -85,6 +85,12 @@ const paddingBoxSx: SxProps = {
 };
 
 
+const minimizedSx: SxProps = {
+  ...paddingBoxSx,
+  display: 'none',
+};
+
+
 /**
  * A React component for composing messages, with attachments and different modes.
  */
@@ -113,6 +119,7 @@ export function Composer(props: {
     chatExecuteModeSendColor, chatExecuteModeSendLabel,
     chatExecuteMenuComponent, chatExecuteMenuShown, showChatExecuteMenu,
   } = useChatExecuteMode(props.capabilityHasT2I, props.isMobile);
+  const [isMinimized, setIsMinimized] = React.useState(false);
   const micCardRef = React.useRef<HTMLDivElement>(null);
 
   // external state
@@ -476,7 +483,7 @@ export function Composer(props: {
     const conversation = getConversation(conversationId);
     const messageToEmbed = conversation?.messages.find(m => m.id === messageId);
     if (conversation && messageToEmbed) {
-      const fragmentsCopy = duplicateDMessageFragmentsNoPH(messageToEmbed.fragments); // [attach] deep copy a message's fragments to attach to ego
+      const fragmentsCopy = duplicateDMessageFragmentsNoVoid(messageToEmbed.fragments); // [attach] deep copy a message's fragments to attach to ego
       if (fragmentsCopy.length) {
         const chatTitle = conversationTitle(conversation);
         const messageText = messageFragmentsReduceText(fragmentsCopy);
@@ -542,6 +549,11 @@ export function Composer(props: {
   // const handleFocusModeOff = React.useCallback(() => setIsFocusedMode(false), [setIsFocusedMode]);
 
   // useMediaSessionCallbacks({ play: toggleRecognition, pause: toggleRecognition });
+
+
+  // Minimize
+
+  const handleToggleMinimized = React.useCallback(() => setIsMinimized(hide => !hide), []);
 
 
   // Attachment Up
@@ -691,10 +703,10 @@ export function Composer(props: {
   return (
     <Box aria-label='User Message' component='section' sx={props.sx}>
 
-      {!isMobile && labsShowShortcutBar && <StatusBar />}
+      {!isMobile && labsShowShortcutBar && <StatusBar toggleMinimized={handleToggleMinimized} isMinimized={isMinimized} />}
 
       {/* This container is here just to let the potential statusbar fill the whole space, so we moved the padding here and not in the parent */}
-      <Box sx={paddingBoxSx}>
+      <Box sx={(!isMinimized || isMobile || !labsShowShortcutBar) ? paddingBoxSx : minimizedSx}>
 
         <Grid
           container
