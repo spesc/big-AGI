@@ -26,6 +26,10 @@ export function useOptimaDrawerOpen() {
   return useLayoutOptimaStore(({ drawerIsOpen }) => drawerIsOpen);
 }
 
+export function useOptimaDrawerPeeking() {
+  return useLayoutOptimaStore(({ drawerIsPeeking }) => drawerIsPeeking);
+}
+
 
 // Panel
 
@@ -55,6 +59,10 @@ export function useOptimaPanelOpen(isMobile: boolean, currentApp?: NavItemApp) {
     panelShownAsPanel: panelIsOpen && panelHasContent && !panelAsPopup,
     panelShownAsPopup: panelIsOpen && panelHasContent && panelAsPopup,
   };
+}
+
+export function useOptimaPanelPeeking() {
+  return useLayoutOptimaStore(({ panelIsPeeking }) => panelIsPeeking);
 }
 
 
