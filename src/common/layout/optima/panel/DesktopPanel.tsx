@@ -22,8 +22,8 @@ const DesktopPanelFixRoot = styled(Box)({
   
   // Base state
   zIndex: themeZIndexDesktopPanel,
-  
-  '&[aria-hidden="true"]': {
+
+  '&[data-closed="true"]': {
     contain: 'strict',
     pointerEvents: 'none',
   },
@@ -56,20 +56,22 @@ const DesktopPanelTranslatingSheet = styled(Sheet)(({ theme }) => ({
 
   overflowY: 'auto', // NOTE: this was not present on DesktopDrawer -- we added it here
 
-  // base state
+  // base state (normal open/close, and peeking exit)
   transform: 'none',
-  transition: 'transform 0.42s cubic-bezier(.17,.84,.44,1)', // Default: normal open/close, and peeking exit
-  willChange: 'transform', // optimize for transform animations
+  transition: 'transform 0.42s cubic-bezier(.17,.84,.44,1), box-shadow 0.42s cubic-bezier(.17,.84,.44,1)',
+  willChange: 'transform, box-shadow',
 
-  // Closed state via aria
-  '&[aria-hidden="true"]': {
-    transform: 'translateX(100%)',
+  // Closed state via data attribute
+  '&[data-closed="true"]': {
+    transform: 'translateX(101%)', // the extra 1% takes care of fractional units (custom monitor scaling)
+    borderLeftColor: 'transparent',
   },
 
   // Peek state via class
   '&.panel-peeking': {
-    transition: 'transform 0.25s cubic-bezier(.4,0,.2,1)', // faster enter animation
-    boxShadow: theme.shadow.lg,
+    transition: 'transform 0.25s cubic-bezier(.4,0,.2,1)', // faster enter animation, shadow as-is
+    boxShadow: '0 0 48px rgba(var(--joy-palette-neutral-darkChannel) / 0.4)', // stronger shadow when peeking, was theme.shadow.lg
+    borderLeftColor: 'transparent',
   },
 })) as typeof Sheet;
 
@@ -79,7 +81,8 @@ export function DesktopPanel(props: { component: React.ElementType, currentApp?:
   // external state
   const isMobile = useIsMobile();
   const contentScaling = adjustContentScaling(useUIContentScaling(), isMobile ? 1 : 0);
-  const { panelShownAsPanel: isOpen, panelAsPopup } = useOptimaPanelOpen(false, props.currentApp);
+  const { panelShownAsPanel, panelShownAsPeeking, panelAsPopup } = useOptimaPanelOpen(false, props.currentApp);
+  const isOpen = panelShownAsPanel || panelShownAsPeeking;
 
   // Close the panel if the current page goes for a popup instead
   React.useEffect(() => {
@@ -89,14 +92,14 @@ export function DesktopPanel(props: { component: React.ElementType, currentApp?:
 
   return (
     <DesktopPanelFixRoot
-      aria-hidden={!isOpen}
-      // className={isPanelPeeking ? 'panel-peeking' : undefined}
+      data-closed={!isOpen}
+      className={panelShownAsPeeking ? 'panel-peeking' : undefined}
     >
 
       <DesktopPanelTranslatingSheet
         component={props.component}
-        aria-hidden={!isOpen}
-        // className={isPanelPeeking ? 'panel-peeking' : undefined}
+        data-closed={!isOpen}
+        className={panelShownAsPeeking ? 'panel-peeking' : undefined}
       >
 
         <List size={themeScalingMap[contentScaling]?.optimaPanelGroupSize} sx={{ '--ListItem-minHeight': '2.5rem', py: 0 /*0.75*/, flex: 0 }}>
