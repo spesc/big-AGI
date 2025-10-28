@@ -77,6 +77,20 @@ export const DModelParameterRegistry = {
     // initialValue: false, // we don't need the initial value here, will be assumed off
   } as const,
 
+  llmVndAnt1MContext: {
+    label: '1M Context Window (Beta)',
+    type: 'boolean' as const,
+    description: 'Enable 1M token context window with premium pricing for >200K input tokens',
+    // No initialValue - undefined means off (e.g. default 200K context window)
+  } as const,
+
+  llmVndAntSkills: {
+    label: 'Document Skills',
+    type: 'string' as const,
+    description: 'Comma-separated skills (xlsx,pptx,pdf,docx)',
+    initialValue: '', // empty string = disabled
+  } as const,
+
   llmVndAntThinkingBudget: {
     label: 'Thinking Budget',
     type: 'integer' as const,
@@ -86,6 +100,22 @@ export const DModelParameterRegistry = {
     nullable: {
       meaning: 'Disable extended thinking',
     } as const,
+  } as const,
+
+  llmVndAntWebFetch: {
+    label: 'Web Fetch',
+    type: 'enum' as const,
+    description: 'Enable fetching content from web pages and PDFs',
+    values: ['auto', 'off'] as const,
+    // No initialValue - undefined means off (same as 'off')
+  } as const,
+
+  llmVndAntWebSearch: {
+    label: 'Web Search',
+    type: 'enum' as const,
+    description: 'Enable web search for real-time information',
+    values: ['auto', 'off'] as const,
+    // No initialValue - undefined means off (same as 'off')
   } as const,
 
   llmVndGeminiAspectRatio: {
@@ -193,6 +223,14 @@ export const DModelParameterRegistry = {
     description: 'Filter results by publication date',
     values: ['unfiltered', '1m', '3m', '6m', '1y'] as const,
     // requiredFallback: 'unfiltered',
+  } as const,
+
+  llmVndOrtWebSearch: {
+    label: 'Web Search',
+    type: 'enum' as const,
+    description: 'Enable OpenRouter web search (uses native search for OpenAI/Anthropic, Exa for others)',
+    values: ['auto'] as const,
+    // No initialValue - undefined means off
   } as const,
 
   llmVndPerplexitySearchMode: {

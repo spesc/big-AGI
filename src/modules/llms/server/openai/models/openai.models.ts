@@ -64,6 +64,7 @@ export const _knownOpenAIChatModels: ManualMappings = [
       { paramId: 'llmVndOaiRestoreMarkdown' }, // activate markdown restoration (true as initial value)
       { paramId: 'llmVndOaiVerbosity' }, // gpt-5-class nets have verbosity control
       { paramId: 'llmVndOaiImageGeneration' }, // image generation capability
+      { paramId: 'llmForceNoStream' }, // non-streaming option for unverified orgs
     ],
     chatPrice: { input: 1.25, cache: { cType: 'oai-ac', read: 0.125 }, output: 10 },
     benchmark: { cbaElo: 1442 }, // gpt-5-high
@@ -83,7 +84,7 @@ export const _knownOpenAIChatModels: ManualMappings = [
     maxCompletionTokens: 272000,
     trainingDataCutoff: 'Sep 30, 2024',
     interfaces: [LLM_IF_OAI_Responses, ...IFS_CHAT_MIN, LLM_IF_OAI_Reasoning, LLM_IF_HOTFIX_NoTemperature],
-    // parameterSpecs: [{ paramId: 'llmVndOaiReasoningEffort' }, { paramId: 'llmForceNoStream' }],
+    parameterSpecs: [{ paramId: 'llmVndOaiReasoningEffort' }, { paramId: 'llmForceNoStream' }],
     chatPrice: { input: 15, output: 120 },
     // benchmark: has not been measured yet
   },
@@ -119,9 +120,29 @@ export const _knownOpenAIChatModels: ManualMappings = [
       { paramId: 'llmVndOaiReasoningEffort' }, // works
       { paramId: 'llmVndOaiWebSearchContext' }, // works, although is not triggered often
       // { paramId: 'llmVndOaiRestoreMarkdown', initialValue: false }, // since this is for code, let the prompt dictate markdown usage rather than us injecting
+      { paramId: 'llmForceNoStream' },
     ],
     chatPrice: { input: 1.25, cache: { cType: 'oai-ac', read: 0.125 }, output: 10 },
     // benchmark: TBD
+  },
+
+  // GPT-5 Search API
+  {
+    idPrefix: 'gpt-5-search-api-2025-10-14',
+    label: 'GPT-5 Search API (2025-10-14)',
+    description: 'Updated web search model in Chat Completions API. 60% cheaper with domain filtering support.',
+    contextWindow: 400000,
+    maxCompletionTokens: 100000,
+    trainingDataCutoff: 'Sep 30, 2024',
+    interfaces: [...IFS_CHAT_MIN, LLM_IF_Tools_WebSearch],
+    parameterSpecs: [{ paramId: 'llmVndOaiWebSearchContext', initialValue: 'medium' }], // Search enabled by default
+    chatPrice: { input: 1.25, output: 10 },
+    // benchmark: TBD
+  },
+  {
+    idPrefix: 'gpt-5-search-api',
+    label: 'GPT-5 Search API',
+    symLink: 'gpt-5-search-api-2025-10-14',
   },
 
   // GPT-5 mini
@@ -133,7 +154,7 @@ export const _knownOpenAIChatModels: ManualMappings = [
     maxCompletionTokens: 128000,
     trainingDataCutoff: 'May 30, 2024',
     interfaces: [LLM_IF_OAI_Responses, ...IFS_CHAT_CACHE_REASON, LLM_IF_Tools_WebSearch, LLM_IF_HOTFIX_NoTemperature],
-    parameterSpecs: [{ paramId: 'llmVndOaiReasoningEffort4' }, { paramId: 'llmVndOaiWebSearchContext' }, { paramId: 'llmVndOaiRestoreMarkdown' }, { paramId: 'llmVndOaiVerbosity' }, { paramId: 'llmVndOaiImageGeneration' }],
+    parameterSpecs: [{ paramId: 'llmVndOaiReasoningEffort4' }, { paramId: 'llmVndOaiWebSearchContext' }, { paramId: 'llmVndOaiRestoreMarkdown' }, { paramId: 'llmVndOaiVerbosity' }, { paramId: 'llmVndOaiImageGeneration' }, { paramId: 'llmForceNoStream' }],
     chatPrice: { input: 0.25, cache: { cType: 'oai-ac', read: 0.025 }, output: 2 },
     benchmark: { cbaElo: 1388 }, // gpt-5-mini-high
   },
